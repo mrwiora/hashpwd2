@@ -56,10 +56,11 @@ build() {
     # Get version info
     local git_tag=$(git describe --tags --exact-match 2>/dev/null || echo "v$pkgver")
     local git_commit=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+    local build_date=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
     # Build with version information
     go build \
-        -ldflags "-s -w -X main.Version=${git_tag#v}" \
+        -ldflags "-s -w -X main.version=${git_tag#v} -X main.commit=${git_commit} -X main.date=${build_date}" \
         -o $pkgname \
         .
 }
