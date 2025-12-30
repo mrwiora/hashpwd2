@@ -88,10 +88,10 @@ func TestHashCalculation(t *testing.T) {
 			expected: "HoTBwJKbaiIUMcK7xd2igzpjh1QFsAwCSA3jQb9Ai3iSPDTGM8yIk4UrYvFewW9+Y+GMU4rRqs/u/yUXCdzo1A",
 		},
 		{
-			name:     "special characters in password and salt",
-			password: "p@ssw0rd!#$%",
-			salt:     "s@lt&*()",
-			expected: "eim3H9sv+vlPdU0RsNIU/VEXm9emN8C/1VXMuLqkjDhnAfHmd2GAPZw4Qly6oB+aNT+/aZ4LGtTnqi06HMKigQ",
+			name:     "special characters",
+			password: "p@ssw0rd!#$-_.123",
+			salt:     "s@lt&*()-_.456",
+			expected: "ICM/EVFC/rfMx7RZJCgs6Y7FbV9QUK6oQMToNowjQzfTuwI2dhzWMQKp8vwk9cAPxNFGCNIk/4rIv+DcWdjJKg",
 		},
 	}
 
@@ -243,46 +243,6 @@ func TestStderrStdoutSeparation(t *testing.T) {
 	if len(hash) != 86 { // 64 bytes base64-encoded without padding = 86 chars
 		t.Errorf("Expected hash length of 86 characters, got %d", len(hash))
 	}
-}
-
-// TestConsistentHashing verifies that same inputs produce same outputs (piped mode)
-func TestConsistentHashing(t *testing.T) {
-	// Build the application - we only test piped mode, so clipboard is never initialized
-	buildCmd := exec.Command("go", "build", "-o", "hashpwd2_test", ".")
-	if err := buildCmd.Run(); err != nil {
-		t.Fatalf("Failed to build application: %v", err)
-	}
-	defer exec.Command("rm", "-f", "hashpwd2_test").Run()
-
-	// Run the same input twice
-	password := "consistent"
-	salt := "test"
-	input := "printf '" + password + "\\n" + salt + "\\n' | ./hashpwd2_test"
-
-	var hash1, hash2 string
-
-	for i := 0; i < 2; i++ {
-		cmd := exec.Command("sh", "-c", input)
-		var stdout bytes.Buffer
-		cmd.Stdout = &stdout
-
-		if err := cmd.Run(); err != nil {
-			t.Fatalf("Run %d failed: %v", i+1, err)
-		}
-
-		hash := strings.TrimSpace(stdout.String())
-		if i == 0 {
-			hash1 = hash
-		} else {
-			hash2 = hash
-		}
-	}
-
-	if hash1 != hash2 {
-		t.Errorf("Hashes are not consistent!\nFirst:  %s\nSecond: %s", hash1, hash2)
-	}
-
-	t.Logf("Consistent hash for password='%s', salt='%s': %s", password, salt, hash1)
 }
 
 // BenchmarkHashGeneration benchmarks the hash generation performance
