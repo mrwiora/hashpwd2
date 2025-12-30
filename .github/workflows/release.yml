@@ -36,13 +36,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-go-
 
-      - name: Install X11 development libraries
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libx11-dev xorg-dev libxtst-dev libpng++-dev
-          sudo apt-get install -y xcb libxcb-xkb-dev x11-xkb-utils libx11-xcb-dev
-          sudo apt-get install -y libxkbcommon-x11-dev libxkbcommon-dev
-
       - name: Download dependencies
         run: go mod download
 

@@ -9,11 +9,8 @@ import (
 	"os"
 
 	"strings"
-	"time"
 
 	"golang.org/x/crypto/argon2"
-
-	"golang.design/x/clipboard"
 	"golang.org/x/term"
 )
 
@@ -52,10 +49,6 @@ func main() {
 		parallelism: 4,
 		keyLength:   64,
 	}
-
-	// Check if stdout is being piped (for clipboard vs pipe output)
-	stdoutStat, _ := os.Stdout.Stat()
-	isStdoutPiped := (stdoutStat.Mode() & os.ModeCharDevice) == 0
 
 	// Check if stdin is a terminal or pipe
 	stdinStat, _ := os.Stdin.Stat()
@@ -109,23 +102,8 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// Always output the hash to stdout
+	// Output the hash to stdout
 	fmt.Println(hash)
-
-	// Only use clipboard when stdout is not piped (interactive mode)
-	if !isStdoutPiped {
-		// Try to initialize and use clipboard, but don't fail if unavailable
-		err := clipboard.Init()
-		if err != nil {
-			// Clipboard not available (headless environment, no X11, etc.)
-			fmt.Fprintln(os.Stderr, "Note: Clipboard not available in this environment")
-		} else {
-			clipboard.Write(clipboard.FmtText, []byte(hash))
-			fmt.Println("OK! Hurry up - you have 30 seconds to paste :)")
-			time.Sleep(10 * time.Second)
-			clipboard.Write(clipboard.FmtText, []byte("---"))
-		}
-	}
 }
 
 func generateFromPassword(password string, salt string, p *params) (encodedHash string, err error) {
