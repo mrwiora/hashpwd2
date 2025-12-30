@@ -54,10 +54,10 @@ jobs:
 
           # Get version for ldflags
           VERSION=${{ steps.get_version.outputs.VERSION }}
-          LDFLAGS="-s -w -X main.Version=${VERSION}"
+          LDFLAGS="-s -w -X main.version=${VERSION} -X main.commit=$(git rev-parse --short HEAD) -X main.date=$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 
           # Build for Linux amd64
-          GOOS=linux GOARCH=amd64 go build -ldflags "${LDFLAGS}" -o dist/hashpwd2 .
+          GOOS=linux GOARCH=amd64 go build -ldflags "${LDFLAGS}" -o dist/hashpwd2-linux-amd64 .
 
       - name: Create checksums
         run: |
@@ -69,7 +69,7 @@ jobs:
         with:
           name: linux-binaries
           path: |
-            dist/hashpwd2-amd64
+            dist/hashpwd2-linux-amd64
             dist/checksums.txt
           retention-days: 1
 
