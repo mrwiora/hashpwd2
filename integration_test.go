@@ -8,7 +8,7 @@ import (
 )
 
 // TestHashCalculation tests that the application produces the correct hash
-// when given specific inputs via piped stdin/stdout
+// when given specific inputs via piped stdin/stdout (no clipboard involved)
 func TestHashCalculation(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -44,7 +44,7 @@ func TestHashCalculation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Build the application first
+			// Build the application - we only test piped mode, so clipboard is never initialized
 			buildCmd := exec.Command("go", "build", "-o", "hashpwd2_test", ".")
 			if err := buildCmd.Run(); err != nil {
 				t.Fatalf("Failed to build application: %v", err)
@@ -102,9 +102,9 @@ func TestHashCalculation(t *testing.T) {
 	}
 }
 
-// TestPipedOutput specifically tests the piped behavior with cat
+// TestPipedOutput specifically tests the piped behavior with cat (no clipboard)
 func TestPipedOutput(t *testing.T) {
-	// Build the application
+	// Build the application - we only test piped mode, so clipboard is never initialized
 	buildCmd := exec.Command("go", "build", "-o", "hashpwd2_test", ".")
 	if err := buildCmd.Run(); err != nil {
 		t.Fatalf("Failed to build application: %v", err)
@@ -141,9 +141,9 @@ func TestPipedOutput(t *testing.T) {
 	}
 }
 
-// TestStderrStdoutSeparation verifies that prompts go to stderr and hash to stdout
+// TestStderrStdoutSeparation verifies that prompts go to stderr and hash to stdout (piped mode)
 func TestStderrStdoutSeparation(t *testing.T) {
-	// Build the application
+	// Build the application - we only test piped mode, so clipboard is never initialized
 	buildCmd := exec.Command("go", "build", "-o", "hashpwd2_test", ".")
 	if err := buildCmd.Run(); err != nil {
 		t.Fatalf("Failed to build application: %v", err)
@@ -192,9 +192,9 @@ func TestStderrStdoutSeparation(t *testing.T) {
 	}
 }
 
-// TestConsistentHashing verifies that same inputs produce same outputs
+// TestConsistentHashing verifies that same inputs produce same outputs (piped mode)
 func TestConsistentHashing(t *testing.T) {
-	// Build the application
+	// Build the application - we only test piped mode, so clipboard is never initialized
 	buildCmd := exec.Command("go", "build", "-o", "hashpwd2_test", ".")
 	if err := buildCmd.Run(); err != nil {
 		t.Fatalf("Failed to build application: %v", err)

@@ -57,14 +57,6 @@ func main() {
 	stdoutStat, _ := os.Stdout.Stat()
 	isStdoutPiped := (stdoutStat.Mode() & os.ModeCharDevice) == 0
 
-	// Only initialize clipboard if stdout is not piped
-	if !isStdoutPiped {
-		err := clipboard.Init()
-		if err != nil {
-			panic(err)
-		}
-	}
-
 	// Check if stdin is a terminal or pipe
 	stdinStat, _ := os.Stdin.Stat()
 	isStdinPiped := (stdinStat.Mode() & os.ModeCharDevice) == 0
@@ -117,18 +109,23 @@ func main() {
 		log.Fatal(err)
 	}
 
-	if isStdoutPiped {
-		// When stdout is piped, only output the hash to stdout (no clipboard)
-		fmt.Println(hash)
-	} else {
-		// When stdout is not piped, use clipboard as before
-		fmt.Println(hash)
-		clipboard.Write(clipboard.FmtText, []byte(hash))
-		fmt.Println("OK! Hurry up - you have 30 seconds to paste :)")
-		time.Sleep(10 * time.Second)
-		clipboard.Write(clipboard.FmtText, []byte("---"))
-	}
+	// Always output the hash to stdout
+	fmt.Println(hash)
 
+	// Only use clipboard when stdout is not piped (interactive mode)
+	if !isStdoutPiped {
+		// Try to initialize and use clipboard, but don't fail if unavailable
+		err := clipboard.Init()
+		if err != nil {
+			// Clipboard not available (headless environment, no X11, etc.)
+			fmt.Fprintln(os.Stderr, "Note: Clipboard not available in this environment")
+		} else {
+			clipboard.Write(clipboard.FmtText, []byte(hash))
+			fmt.Println("OK! Hurry up - you have 30 seconds to paste :)")
+			time.Sleep(10 * time.Second)
+			clipboard.Write(clipboard.FmtText, []byte("---"))
+		}
+	}
 }
 
 func generateFromPassword(password string, salt string, p *params) (encodedHash string, err error) {
