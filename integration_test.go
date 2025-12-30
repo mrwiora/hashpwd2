@@ -21,6 +21,45 @@ import (
 // 3. Consistent hashing for same inputs
 // 4. Performance benchmarks
 
+// TestDebugInputReading tests what the application actually receives as input
+func TestDebugInputReading(t *testing.T) {
+	// Build the application
+	buildCmd := exec.Command("go", "build", "-o", "hashpwd2_test", ".")
+	if err := buildCmd.Run(); err != nil {
+		t.Fatalf("Failed to build application: %v", err)
+	}
+	defer exec.Command("rm", "-f", "hashpwd2_test").Run()
+
+	tests := []struct {
+		name     string
+		password string
+		salt     string
+	}{
+		{"abc with abc", "abc", "abc"},
+		{"abc with empty", "abc", ""},
+		{"testpassword with testsalt", "testpassword", "testsalt"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			inputCmd := "printf '" + tt.password + "\\n" + tt.salt + "\\n' | ./hashpwd2_test --debug"
+			cmd := exec.Command("sh", "-c", inputCmd)
+
+			var stdout, stderr bytes.Buffer
+			cmd.Stdout = &stdout
+			cmd.Stderr = &stderr
+
+			if err := cmd.Run(); err != nil {
+				t.Fatalf("Failed to run application: %v\nStderr: %s", err, stderr.String())
+			}
+
+			t.Logf("Input: password='%s', salt='%s'", tt.password, tt.salt)
+			t.Logf("Stderr output:\n%s", stderr.String())
+			t.Logf("Stdout (hash):\n%s", stdout.String())
+		})
+	}
+}
+
 // TestHashCalculation tests that the application produces the correct hash
 // when given specific inputs via piped stdin/stdout (no clipboard involved)
 func TestHashCalculation(t *testing.T) {
@@ -65,9 +104,9 @@ func TestHashCalculation(t *testing.T) {
 			}
 			defer exec.Command("rm", "-f", "hashpwd2_test").Run()
 
-			// Prepare input using echo -e for proper newline handling
+			// Prepare input using printf for proper newline handling
 			// We need to use sh -c because Go's exec doesn't support pipes directly
-			inputCmd := "echo -e '" + tt.password + "\\n" + tt.salt + "' | ./hashpwd2_test"
+			inputCmd := "printf '" + tt.password + "\\n" + tt.salt + "\\n' | ./hashpwd2_test"
 
 			cmd := exec.Command("sh", "-c", inputCmd)
 
@@ -125,9 +164,9 @@ func TestPipedOutput(t *testing.T) {
 	}
 	defer exec.Command("rm", "-f", "hashpwd2_test").Run()
 
-	// Test piped scenario: echo -e | ./hashpwd2_test | cat
+	// Test piped scenario: printf | ./hashpwd2_test | cat
 	// Using sh -c to properly handle the pipe chain
-	cmd := exec.Command("sh", "-c", "echo -e 'abc\\nabc' | ./hashpwd2_test | cat")
+	cmd := exec.Command("sh", "-c", "printf 'abc\\nabc\\n' | ./hashpwd2_test | cat")
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -165,7 +204,7 @@ func TestStderrStdoutSeparation(t *testing.T) {
 	defer exec.Command("rm", "-f", "hashpwd2_test").Run()
 
 	// Run with pipe to ensure piped mode is detected
-	cmd := exec.Command("sh", "-c", "echo -e 'abc\\n' | ./hashpwd2_test | cat")
+	cmd := exec.Command("sh", "-c", "printf 'abc\\n\\n' | ./hashpwd2_test | cat")
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -218,7 +257,7 @@ func TestConsistentHashing(t *testing.T) {
 	// Run the same input twice
 	password := "consistent"
 	salt := "test"
-	input := "echo -e '" + password + "\\n" + salt + "' | ./hashpwd2_test"
+	input := "printf '" + password + "\\n" + salt + "\\n' | ./hashpwd2_test"
 
 	var hash1, hash2 string
 
