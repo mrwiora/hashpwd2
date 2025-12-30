@@ -67,8 +67,8 @@ build() {
 check() {
     cd "$pkgname"
 
-    # Run unit tests (skip integration tests as they require special TPM setup)
-    go test -v -tags=unit ./cmd/...
+    # Run integration tests with piped mode (no clipboard, no X11 required)
+    go test -v -timeout 10m ./...
 }
 
 package() {
