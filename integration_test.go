@@ -7,6 +7,20 @@ import (
 	"testing"
 )
 
+// Integration tests for hashpwd2
+//
+// These tests ONLY test the piped mode of the application:
+// - Input is provided via stdin pipe (echo -e 'password\nsalt' | ./hashpwd2)
+// - Output is captured via stdout pipe (./hashpwd2 | cat)
+// - Clipboard functionality is NEVER triggered because isStdoutPiped=true
+// - Tests can run in headless/CI environments without X11 display
+//
+// The tests verify:
+// 1. Correct hash calculation for various inputs
+// 2. Proper separation of informational messages (stderr) vs hash output (stdout)
+// 3. Consistent hashing for same inputs
+// 4. Performance benchmarks
+
 // TestHashCalculation tests that the application produces the correct hash
 // when given specific inputs via piped stdin/stdout (no clipboard involved)
 func TestHashCalculation(t *testing.T) {
