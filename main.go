@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bufio"
 	"encoding/base64"
 	"fmt"
+	"io"
 	"log"
 	"os"
 
@@ -30,12 +32,18 @@ type params struct {
 }
 
 func main() {
-	// Check for version flag
-	if len(os.Args) > 1 && (os.Args[1] == "--version" || os.Args[1] == "-v") {
-		fmt.Fprintf(os.Stderr, "hashpwd2 version %s\n", version)
-		fmt.Fprintf(os.Stderr, "commit: %s\n", commit)
-		fmt.Fprintf(os.Stderr, "built: %s\n", date)
-		os.Exit(0)
+	// Check for flags
+	debugMode := false
+	if len(os.Args) > 1 {
+		if os.Args[1] == "--version" || os.Args[1] == "-v" {
+			fmt.Fprintf(os.Stderr, "hashpwd2 version %s\n", version)
+			fmt.Fprintf(os.Stderr, "commit: %s\n", commit)
+			fmt.Fprintf(os.Stderr, "built: %s\n", date)
+			os.Exit(0)
+		}
+		if os.Args[1] == "--debug" || os.Args[1] == "-d" {
+			debugMode = true
+		}
 	}
 	// Establish the parameters to use for Argon2.
 	p := &params{
@@ -45,28 +53,60 @@ func main() {
 		keyLength:   64,
 	}
 
-	// Check if output is being piped
-	stat, _ := os.Stdout.Stat()
-	isPiped := (stat.Mode() & os.ModeCharDevice) == 0
+	// Check if stdout is being piped (for clipboard vs pipe output)
+	stdoutStat, _ := os.Stdout.Stat()
+	isStdoutPiped := (stdoutStat.Mode() & os.ModeCharDevice) == 0
 
-	// Only initialize clipboard if not piped
-	if !isPiped {
+	// Only initialize clipboard if stdout is not piped
+	if !isStdoutPiped {
 		err := clipboard.Init()
 		if err != nil {
 			panic(err)
 		}
 	}
 
-	// Write informational messages to stderr so they don't get piped
-	fmt.Fprintln(os.Stderr, "Enter secret: ")
-	textSecret, _ := term.ReadPassword(int(os.Stdin.Fd()))
+	// Check if stdin is a terminal or pipe
+	stdinStat, _ := os.Stdin.Stat()
+	isStdinPiped := (stdinStat.Mode() & os.ModeCharDevice) == 0
 
-	fmt.Fprintln(os.Stderr, "Enter salt: ")
-	textSecretSalt, _ := term.ReadPassword(int(os.Stdin.Fd()))
+	var textSecret, textSecretSalt []byte
+
+	if isStdinPiped {
+		// When stdin is piped, read directly from stdin
+		fmt.Fprintln(os.Stderr, "Enter secret: ")
+		reader := bufio.NewReader(os.Stdin)
+		password, err := reader.ReadString('\n')
+		if err != nil && err != io.EOF {
+			log.Fatal(err)
+		}
+		textSecret = []byte(password)
+
+		fmt.Fprintln(os.Stderr, "Enter salt: ")
+		salt, err := reader.ReadString('\n')
+		if err != nil && err != io.EOF {
+			log.Fatal(err)
+		}
+		textSecretSalt = []byte(salt)
+	} else {
+		// When stdin is a terminal, use ReadPassword for security
+		fmt.Fprintln(os.Stderr, "Enter secret: ")
+		textSecret, _ = term.ReadPassword(int(os.Stdin.Fd()))
+
+		fmt.Fprintln(os.Stderr, "Enter salt: ")
+		textSecretSalt, _ = term.ReadPassword(int(os.Stdin.Fd()))
+	}
 
 	// Removing end of line
 	textSecretCleaned := strings.Replace(string(textSecret[:]), "\n", "", -1)
 	textSecretSaltCleaned := strings.Replace(string(textSecretSalt[:]), "\n", "", -1)
+
+	// Debug output
+	if debugMode {
+		fmt.Fprintf(os.Stderr, "DEBUG: Password length: %d\n", len(textSecretCleaned))
+		fmt.Fprintf(os.Stderr, "DEBUG: Password (hex): %x\n", textSecretCleaned)
+		fmt.Fprintf(os.Stderr, "DEBUG: Salt length: %d\n", len(textSecretSaltCleaned))
+		fmt.Fprintf(os.Stderr, "DEBUG: Salt (hex): %x\n", textSecretSaltCleaned)
+	}
 
 	fmt.Fprintln(os.Stderr, "Please wait!")
 
@@ -77,11 +117,11 @@ func main() {
 		log.Fatal(err)
 	}
 
-	if isPiped {
-		// When piped, only output the hash to stdout
+	if isStdoutPiped {
+		// When stdout is piped, only output the hash to stdout (no clipboard)
 		fmt.Println(hash)
 	} else {
-		// When not piped, use clipboard as before
+		// When stdout is not piped, use clipboard as before
 		fmt.Println(hash)
 		clipboard.Write(clipboard.FmtText, []byte(hash))
 		fmt.Println("OK! Hurry up - you have 30 seconds to paste :)")

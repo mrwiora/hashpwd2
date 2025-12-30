@@ -1,0 +1,322 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "*"
+
+jobs:
+  build-binaries:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    outputs:
+      version: ${{ steps.get_version.outputs.VERSION }}
+      version_clean: ${{ steps.get_version.outputs.VERSION_CLEAN }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: "1.25"
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Get version from tag
+        id: get_version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/}
+          VERSION_CLEAN=${VERSION#v}
+          echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
+          echo "VERSION_CLEAN=${VERSION_CLEAN}" >> $GITHUB_OUTPUT
+
+      - name: Build binaries for Linux platforms
+        run: |
+          # Create dist directory
+          mkdir -p dist
+
+          # Get version for ldflags
+          VERSION=${{ steps.get_version.outputs.VERSION }}
+          LDFLAGS="-s -w -X main.Version=${VERSION}"
+
+          # Build for Linux amd64
+          GOOS=linux GOARCH=amd64 go build -ldflags "${LDFLAGS}" -o dist/hashpwd2 .
+
+      - name: Create checksums
+        run: |
+          cd dist
+          sha256sum * > checksums.txt
+
+      - name: Upload binary artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-binaries
+          path: |
+            dist/hashpwd2-amd64
+            dist/checksums.txt
+          retention-days: 1
+
+  build-archlinux:
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Update system and install dependencies
+        run: |
+          pacman -Syu --noconfirm
+          pacman -S --noconfirm base-devel git go namcap
+
+      - name: Validate Go version
+        run: |
+          GO_VERSION=$(go version | awk '{print $3}' | sed 's/go//')
+          echo "Installed Go version: ${GO_VERSION}"
+          if ! go version | grep -qE 'go1\.(19|[2-9][0-9]|[3-9][0-9])\.' && ! go version | grep -qE 'go[2-9]\.' ; then
+            echo "ERROR: Go version 1.19 or higher required, found ${GO_VERSION}"
+            exit 1
+          fi
+
+      - name: Create build user
+        run: |
+          useradd -m -G wheel builder
+          echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fix ownership for build user
+        run: |
+          chown -R builder:builder .
+
+      - name: Get version from tag
+        id: get_version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/}
+          VERSION_CLEAN=${VERSION#v}
+          echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
+          echo "VERSION_CLEAN=${VERSION_CLEAN}" >> $GITHUB_OUTPUT
+
+      - name: Update PKGBUILD version
+        run: |
+          cd packaging/archlinux
+          echo "Updating PKGBUILD version to ${{ steps.get_version.outputs.VERSION_CLEAN }}"
+          sed -i "s/pkgver=0.0.0/pkgver=${{ steps.get_version.outputs.VERSION_CLEAN }}/" PKGBUILD
+          if ! grep -q "pkgver=${{ steps.get_version.outputs.VERSION_CLEAN }}" PKGBUILD; then
+            echo "ERROR: Failed to update PKGBUILD version"
+            exit 1
+          fi
+
+      - name: Build package
+        run: |
+          cd packaging/archlinux
+          sudo -u builder makepkg --noconfirm --syncdeps --rmdeps --clean
+          if ! ls *.pkg.tar.zst >/dev/null 2>&1; then
+            echo "ERROR: No package file was created"
+            exit 1
+          fi
+
+      - name: Check package with namcap
+        run: |
+          cd packaging/archlinux
+          namcap *.pkg.tar.zst || echo "namcap warnings/errors detected (non-fatal)"
+
+      - name: Validate package contents
+        run: |
+          cd packaging/archlinux
+
+          # Find the main package (not debug package)
+          MAIN_PACKAGE=$(ls hashpwd2-*.pkg.tar.zst | grep -v debug | head -1)
+          if [[ -z "$MAIN_PACKAGE" ]]; then
+            echo "ERROR: No main package found"
+            ls -la *.pkg.tar.zst
+            exit 1
+          fi
+
+          echo "Validating package: $MAIN_PACKAGE"
+          mkdir -p /tmp/package-test
+          tar -xf "$MAIN_PACKAGE" -C /tmp/package-test
+
+          if [[ ! -x "/tmp/package-test/usr/bin/hashpwd2" ]]; then
+            echo "ERROR: hashpwd2 binary not found or not executable"
+            exit 1
+          fi
+
+      - name: Create package checksum
+        run: |
+          cd packaging/archlinux
+          # Only checksum the main package, not debug packages
+          sha256sum hashpwd2-*.pkg.tar.zst | grep -v debug > package-checksums.txt || sha256sum hashpwd2-*.pkg.tar.zst > package-checksums.txt
+
+      - name: Upload package artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: archlinux-package
+          path: |
+            packaging/archlinux/hashpwd2-[0-9]*.pkg.tar.zst
+            packaging/archlinux/package-checksums.txt
+          retention-days: 1
+
+  release:
+    needs: [build-binaries, build-archlinux]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download binary artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-binaries
+          path: dist/
+
+      - name: Download package artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: archlinux-package
+          path: archlinux/
+
+      - name: Get package filename
+        id: package_info
+        run: |
+          # Get the main package filename (not debug package)
+          PACKAGE_FILE=$(ls archlinux/hashpwd2-*.pkg.tar.zst | grep -v debug | head -1 | xargs basename)
+          if [[ -z "$PACKAGE_FILE" ]]; then
+            # Fallback if no debug filtering needed
+            PACKAGE_FILE=$(ls archlinux/hashpwd2-*.pkg.tar.zst | head -1 | xargs basename)
+          fi
+          echo "PACKAGE_FILE=${PACKAGE_FILE}" >> $GITHUB_OUTPUT
+          echo "Selected package: ${PACKAGE_FILE}"
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          VERSION=${{ needs.build-binaries.outputs.version }}
+          PACKAGE_FILE=${{ steps.package_info.outputs.PACKAGE_FILE }}
+
+          # Debug information
+          echo "Working directory: $(pwd)"
+          echo "Git status: $(git status --porcelain 2>/dev/null | wc -l) files"
+          echo "Git remote: $(git remote -v 2>/dev/null || echo 'No remotes')"
+          echo "GitHub repository: ${GH_REPO}"
+          echo "VERSION: ${VERSION}"
+          echo "PACKAGE_FILE: ${PACKAGE_FILE}"
+          echo "Available files in dist/:"
+          ls -la dist/ || echo "No dist directory"
+          echo "Available files in archlinux/:"
+          ls -la archlinux/ || echo "No archlinux directory"
+
+          # Check if release exists
+          if gh release view ${VERSION} --repo ${GH_REPO} >/dev/null 2>&1; then
+            echo "Release ${VERSION} exists, uploading all artifacts..."
+
+            # Upload binary artifacts
+            gh release upload ${VERSION} dist/hashpwd2-linux-amd64 --clobber --repo ${GH_REPO}
+            gh release upload ${VERSION} dist/checksums.txt --clobber --repo ${GH_REPO}
+
+            # Upload package artifacts
+            gh release upload ${VERSION} archlinux/${PACKAGE_FILE} --clobber --repo ${GH_REPO}
+            gh release upload ${VERSION} archlinux/package-checksums.txt --clobber --repo ${GH_REPO}
+
+          else
+            echo "Creating new release ${VERSION}..."
+
+            # Create release notes
+            cat > release_notes.md <<EOF
+          ## Release ${VERSION}
+
+          ### Downloads
+
+          #### Linux Binary
+          - **Binary**: \`hashpwd2-linux-amd64\`
+          - **Usage**: Download, make executable, and run
+
+          #### Arch Linux Package
+          - **Package**: \`${PACKAGE_FILE}\`
+          - **Installation**: \`sudo pacman -U ${PACKAGE_FILE}\`
+          - **Dependencies**: tpm2-tools>=5.0, tpm2-tss>=3.0.0
+
+          ### Installation
+
+          #### From Binary
+          \`\`\`bash
+          wget https://github.com/mrwiora/hashpwd2/releases/download/${VERSION}/hashpwd2-linux-amd64
+          chmod +x hashpwd2-linux-amd64
+          sudo mv hashpwd2-linux-amd64 /usr/local/bin/hashpwd2
+          \`\`\`
+
+          #### Arch Linux
+          \`\`\`bash
+          wget https://github.com/mrwiora/hashpwd2/releases/download/${VERSION}/${PACKAGE_FILE}
+          sudo pacman -U ${PACKAGE_FILE}
+          \`\`\`
+
+          For build from source instructions, see README.md.
+          EOF
+
+            # Create release command
+            RELEASE_CMD="gh release create ${VERSION} --title \"Release ${VERSION}\" --notes-file release_notes.md"
+
+            # Add prerelease flag if version contains dash
+            if [[ "$VERSION" == *"-"* ]]; then
+              RELEASE_CMD="$RELEASE_CMD --prerelease"
+            fi
+
+            # Add all artifacts
+            RELEASE_CMD="$RELEASE_CMD dist/hashpwd2-linux-amd64"
+            RELEASE_CMD="$RELEASE_CMD dist/checksums.txt"
+            RELEASE_CMD="$RELEASE_CMD archlinux/${PACKAGE_FILE}"
+            RELEASE_CMD="$RELEASE_CMD archlinux/package-checksums.txt"
+
+            # Add repository specification to command
+            RELEASE_CMD="$RELEASE_CMD --repo ${GH_REPO}"
+
+            # Execute the command
+            eval $RELEASE_CMD
+          fi
+
+      - name: Release Summary
+        run: |
+          VERSION=${{ needs.build-binaries.outputs.version }}
+          PACKAGE_FILE=${{ steps.package_info.outputs.PACKAGE_FILE }}
+
+          echo "🎉 Release ${VERSION} completed successfully!"
+          echo ""
+          echo "📦 Artifacts created:"
+          echo "  • Linux binary: hashpwd2-linux-amd64"
+          echo "  • Binary checksums: checksums.txt"
+          echo "  • Arch Linux package: ${PACKAGE_FILE}"
+          echo "  • Package checksums: package-checksums.txt"
+          echo ""
+          echo "🔗 Release URL: https://github.com/mrwiora/hashpwd2/releases/tag/${VERSION}"
+          echo ""
+          echo "📊 Artifact sizes:"
+          echo "  • Binary: $(du -h dist/hashpwd2-linux-amd64 | cut -f1)"
+          echo "  • Package: $(du -h archlinux/${PACKAGE_FILE} | cut -f1)"
