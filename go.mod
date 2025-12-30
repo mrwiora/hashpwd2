@@ -9,9 +9,10 @@ require (
 )
 
 require (
-	golang.org/x/exp v0.0.0-20190731235908-ec7cb31e5a56 // indirect
 	golang.org/x/exp/shiny v0.0.0-20251219203646-944ab1f22d93 // indirect
 	golang.org/x/image v0.34.0 // indirect
 	golang.org/x/mobile v0.0.0-20251209145715-2553ed8ce294 // indirect
 	golang.org/x/sys v0.39.0 // indirect
 )
+
+replace golang.org/x/exp => golang.org/x/exp/shiny v0.0.0-20251219203646-944ab1f22d93
