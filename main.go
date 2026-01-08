@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"os/exec"
 
 	"strings"
 
@@ -31,15 +32,18 @@ type params struct {
 func main() {
 	// Check for flags
 	debugMode := false
-	if len(os.Args) > 1 {
-		if os.Args[1] == "--version" || os.Args[1] == "-v" {
+	useAskpass := false
+	for _, arg := range os.Args[1:] {
+		switch arg {
+		case "--version", "-v":
 			fmt.Fprintf(os.Stderr, "hashpwd2 version %s\n", version)
 			fmt.Fprintf(os.Stderr, "commit: %s\n", commit)
 			fmt.Fprintf(os.Stderr, "built: %s\n", date)
 			os.Exit(0)
-		}
-		if os.Args[1] == "--debug" || os.Args[1] == "-d" {
+		case "--debug", "-d":
 			debugMode = true
+		case "--askpass", "-a":
+			useAskpass = true
 		}
 	}
 	// Establish the parameters to use for Argon2.
@@ -56,7 +60,29 @@ func main() {
 
 	var textSecret, textSecretSalt []byte
 
-	if isStdinPiped {
+	if useAskpass {
+		// Use ksshaskpass or similar SSH_ASKPASS program
+		askpassCmd := os.Getenv("SSH_ASKPASS")
+		if askpassCmd == "" {
+			askpassCmd = "ksshaskpass"
+		}
+
+		// Prompt for secret
+		cmd := exec.Command(askpassCmd, "Enter secret:")
+		output, err := cmd.Output()
+		if err != nil {
+			log.Fatalf("Failed to run askpass program: %v", err)
+		}
+		textSecret = output
+
+		// Prompt for salt
+		cmd = exec.Command(askpassCmd, "Enter salt:")
+		output, err = cmd.Output()
+		if err != nil {
+			log.Fatalf("Failed to run askpass program: %v", err)
+		}
+		textSecretSalt = output
+	} else if isStdinPiped {
 		// When stdin is piped, read directly from stdin
 		fmt.Fprintln(os.Stderr, "Enter secret: ")
 		reader := bufio.NewReader(os.Stdin)
