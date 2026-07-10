@@ -1,10 +1,10 @@
 module hashpwd2
 
-go 1.24.0
+go 1.25.0
 
 require (
-	golang.org/x/crypto v0.46.0
-	golang.org/x/term v0.38.0
+	golang.org/x/crypto v0.52.0
+	golang.org/x/term v0.43.0
 )
 
-require golang.org/x/sys v0.39.0 // indirect
+require golang.org/x/sys v0.45.0 // indirect
