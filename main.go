@@ -33,6 +33,9 @@ func main() {
 	// Check for flags
 	debugMode := false
 	useAskpass := false
+	forceAskpass := false
+	forceStdin := false
+
 	for _, arg := range os.Args[1:] {
 		switch arg {
 		case "--version", "-v":
@@ -43,10 +46,14 @@ func main() {
 		case "--debug", "-d":
 			debugMode = true
 		case "--askpass", "-a":
-			useAskpass = true
+			forceAskpass = true
+		case "--stdin":
+			forceStdin = true
 		}
 	}
+
 	// Establish the parameters to use for Argon2.
+	// echo -n 'test' | argon2 "saltsalt" -e -id -k 1048576 -t 16 -p 4 -l 64
 	p := &params{
 		memory:      1 * 1024 * 1024,
 		iterations:  16,
@@ -56,7 +63,22 @@ func main() {
 
 	// Check if stdin is a terminal or pipe
 	stdinStat, _ := os.Stdin.Stat()
+	isStdinTerminal := term.IsTerminal(int(os.Stdin.Fd()))
 	isStdinPiped := (stdinStat.Mode() & os.ModeCharDevice) == 0
+
+	// Auto-detect if we should use askpass:
+	// - If launched from GUI (no terminal but DISPLAY is set), use askpass
+	// - If stdin is a terminal, use terminal input
+	// - If stdin is piped, use piped input
+	if !forceStdin && !forceAskpass {
+		hasDisplay := os.Getenv("DISPLAY") != "" || os.Getenv("WAYLAND_DISPLAY") != ""
+		if !isStdinTerminal && !isStdinPiped && hasDisplay {
+			// Launched from GUI without piped input
+			useAskpass = true
+		}
+	} else if forceAskpass {
+		useAskpass = true
+	}
 
 	var textSecret, textSecretSalt []byte
 
